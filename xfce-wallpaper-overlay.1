@@ -1,0 +1,67 @@
+.TH XFCE\-WALLPAPER\-OVERLAY 1 "October 2024" "xfce-wallpaper-overlay 1.24" "User Commands"
+.SH NAME
+xfce\-wallpaper\-overlay \- Overlay text on XFCE wallpaper
+.SH SYNOPSIS
+.B xfce\-wallpaper\-overlay
+.SH DESCRIPTION
+.B xfce\-wallpaper\-overlay
+is a utility that automatically overlays the XFCE wallpaper with text or images from files located in ~/.config/xfce\-wallpaper\-overlay. It runs in the background and updates the wallpaper whenever the original wallpaper changes or when the overlay configuration files are modified.
+.SH CONFIGURATION
+The overlay content is configured through files placed in the ~/.config/xfce\-wallpaper\-overlay directory. Each file in this directory represents a column on the wallpaper.
+.SS Text Overlay
+To display text, simply create a file with the desired content. The text will be rendered in the corresponding column on the wallpaper. Please make sure to use line breaks because no word wrapping is done. The font size is determined by the longest line.
+.SS Image Overlay
+To display an image, create a file with the following content:
+.PP
+.nf
+/path/to/image.png[:percentage]
+.fi
+.PP
+Where:
+.IP \(bu 2
+\fI/path/to/image.png\fR is the full path to the image file
+.IP \(bu 2
+\fIpercentage\fR (optional) is the width of the image relative to the column width (default is 100)
+.SH FEATURES
+.IP \(bu 2
+Automatically detects changes in wallpaper and overlay configuration
+.IP \(bu 2
+Supports both text and image overlays
+.IP \(bu 2
+Adjusts text color based on wallpaper brightness
+.IP \(bu 2
+Handles multiple displays, focusing on the primary XFCE display
+.IP \(bu 2
+Preserves original wallpaper scaling settings
+.SH FILES
+.IP \(bu 2
+~/.config/xfce\-wallpaper\-overlay/: Directory for overlay configuration files
+.IP \(bu 2
+~/.local/share/xfce\-wallpaper\-overlay/: Directory for temporary files and cached data
+.SH EXAMPLES
+.IP 1. 4
+To display text in the first column:
+.PP
+.nf
+.RS
+echo "Hello, World!" > ~/.config/xfce\-wallpaper\-overlay/column1.txt
+.RE
+.fi
+.IP 2. 4
+To display an image in the second column, occupying 50% of the column width:
+.PP
+.nf
+.RS
+echo "/usr/share/pixmaps/logo.png:50" > ~/.config/xfce\-wallpaper\-overlay/column2.txt
+.RE
+.fi
+.SH NOTES
+.IP \(bu 2
+The overlay is applied each time the wallpaper changes or when configuration files are modified.
+.IP \(bu 2
+To remove the overlay, uninstall the xfce\-wallpaper\-overlay package, log out and back in, then change the wallpaper.
+.SH AUTHOR
+Stefan Zipproth <s.zipproth@ditana.org>
+.SH SEE ALSO
+.BR xfdesktop (1),
+.BR xfconf\-query (1)

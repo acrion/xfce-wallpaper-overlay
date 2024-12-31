@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+
+# Copyright (c) 2024, 2025 acrion innovations GmbH
+# Authors: Stefan Zipproth, s.zipproth@acrion.ch
+#
+# This file is part of xfce-wallpaper-overlay, see https://github.com/acrion/xfce-wallpaper-overlay
+#
+# xfce-wallpaper-overlay is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# xfce-wallpaper-overlay is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with xfce-wallpaper-overlay. If not, see <https://www.gnu.org/licenses/>.
+
+overlay_wallpaper() {
+    local change_type="$1"
+    local OVERLAYED_WALLPAPER_PATH="$DATA_PATH/overlayed_wallpaper.png"
+    local ORIGINAL_WALLPAPER_LINK="$DATA_PATH/original_wallpaper_link"
+    local CONFIG_HASH_FILE="$DATA_PATH/config_hash.md5"
+    local CURRENT_WALLPAPER=$(xfconf-query -c xfce4-desktop -p "$PATH_PROPERTY")
+
+    if [[ "$change_type" == "wallpaper" ]]; then
+        if [[ -z "$CURRENT_WALLPAPER" ]]; then
+            echo "Current wallpaper path is empty" | systemd-cat -t "$APP_NAME" -p notice
+            return
+        fi
+
+        if [[ "$CURRENT_WALLPAPER" != "$OVERLAYED_WALLPAPER_PATH" ]]; then
+            if [[ -f "$ORIGINAL_WALLPAPER_LINK" ]]; then
+                local PREVIOUS_WALLPAPER_PATH="$(readlink "$ORIGINAL_WALLPAPER_LINK")"
+                if [[ "$CURRENT_WALLPAPER" == "$PREVIOUS_WALLPAPER_PATH" ]]; then
+                    echo "Wallpaper has been updated, but is still the same: $CURRENT_WALLPAPER - therefore we do not repeat the overlay." | systemd-cat -t "$APP_NAME" -p notice
+                    return
+                fi
+            fi
+
+            ln -sf "$CURRENT_WALLPAPER" "$ORIGINAL_WALLPAPER_LINK"
+            echo "Wallpaper changed to: $CURRENT_WALLPAPER" | systemd-cat -t "$APP_NAME" -p info
+        else
+            return
+        fi
+    fi
+
+    local ORIGINAL_WALLPAPER_PATH="$(readlink "$ORIGINAL_WALLPAPER_LINK")"
+
+    if [[ ! -f "$ORIGINAL_WALLPAPER_PATH" ]]; then
+        echo "Original wallpaper file not found: $ORIGINAL_WALLPAPER_PATH" | systemd-cat -t "$APP_NAME" -p err
+        return
+    fi
+
+    local width=$(nice -n 19 magick identify -format "%w" "$ORIGINAL_WALLPAPER_PATH")
+    local height=$(nice -n 19 magick identify -format "%h" "$ORIGINAL_WALLPAPER_PATH")
+
+    files_count=0
+    max_line_length=0
+    max_line_length_total=0
+    config_hash=""
+
+    for file in "$CONFIG_PATH"/*; do
+        if [[ -f "$file" ]]; then
+            ((files_count++))
+            max_line_length=$(awk 'length>max_length{max_length=length} END{print max_length}' "$file")
+            ((max_line_length > max_line_length_total ? max_line_length_total = max_line_length : 0))
+            file_hash=$(md5sum "$file" | awk '{print $1}')
+            config_hash+="$file_hash"
+        fi
+    done
+
+    if [[ "$max_line_length_total" -eq 0 ]]; then
+        echo "Max line length in files is 0" | systemd-cat -t "$APP_NAME" -p notice
+        return
+    fi
+
+    config_hash=$(echo "$config_hash" | md5sum | awk '{print $1}') # Calculate final hash of all config files
+
+    if [[ "$change_type" == "config" ]]; then
+        if [[ -f "$CONFIG_HASH_FILE" ]]; then
+            old_hash=$(cat "$CONFIG_HASH_FILE")
+            if [[ "$old_hash" == "$config_hash" ]]; then
+                echo "Config files updated, but content remains the same. Skipping overlay." | systemd-cat -t "$APP_NAME" -p info
+                return
+            fi
+        fi
+    fi
+
+    echo "$config_hash" > "$CONFIG_HASH_FILE" # Update the hash file
+
+    if [[ "$max_line_length_total" -eq 0 ]]; then
+        echo "Max line length in files is 0" | systemd-cat -t "$APP_NAME" -p notice
+        return
+    fi
+
+    nice -n 19 magick "$ORIGINAL_WALLPAPER_PATH" "$OVERLAYED_WALLPAPER_PATH"
+
+    if [[ ! -f "$OVERLAYED_WALLPAPER_PATH" ]]; then
+        echo "Failed to create overlayed wallpaper" | systemd-cat -t "$APP_NAME" -p err
+        return
+    fi
+
+    local xfce_font=$(xfconf-query -c xsettings -p /Gtk/FontName)
+    local font_path=$(fc-match "$xfce_font_name" --format=%{file})
+
+    if [[ -f "$font_path" ]]; then
+        local font_param="-font "$font_path""
+    else
+        local font_param=""
+    fi
+
+    local font_size_factor=2.25
+    local font_size=$(echo "scale=0; $width * $font_size_factor / $files_count / $max_line_length_total" | bc)
+
+    local draw_commands=()
+    local column_index=0
+    local mean=$(nice -n 19 magick "$OVERLAYED_WALLPAPER_PATH" -depth 8 -colorspace Gray -format "%[mean]" info:)
+    mean=$(printf "%.0f" "$mean")
+
+    if [[ "$mean" -ge 32768 ]]; then
+        local color_fill=black
+        local color_stroke=white
+    else
+        local color_fill=white
+        local color_stroke=black
+    fi
+
+    local column_width=$((width / files_count))
+
+    for file in "$CONFIG_PATH"/*; do
+        if [[ -f "$file" ]]; then
+            local first_line=$(head -n 1 "$file")
+            local x_offset=$((width * column_index / files_count))
+
+            if [[ -f "${first_line%%:*}" ]]; then
+                # first_line is a path to an image file
+                local image_path="${first_line%%:*}"
+                local percentage=100
+                if [[ "$first_line" == *:* ]]; then
+                    percentage="${first_line#*:}"
+                fi
+                local image_width=$((column_width * percentage / 100))
+                x_offset=$((x_offset + (column_width - image_width) / 2))
+
+                local original_width=$(nice -n 19 magick identify -format "%w" "$image_path")
+                local original_height=$(nice -n 19 magick identify -format "%h" "$image_path")
+                local image_height=$(echo "scale=0; $image_width * $original_height / $original_width" | bc)
+
+                draw_commands+=(-draw "image over $x_offset,0,$image_width,$image_height '$image_path'")
+            else
+                local overlay_text=$(<"$file")
+                draw_commands+=(-gravity NorthWest $font_param -pointsize "$font_size" -stroke "$color_stroke" -strokewidth 8 -annotate +${x_offset}+4 "$overlay_text")
+                draw_commands+=(-gravity NorthWest $font_param -pointsize "$font_size" -stroke none -fill "$color_fill" -annotate +${x_offset}+4 "$overlay_text")
+            fi
+
+            ((column_index++))
+        fi
+    done
+
+    nice -n 19 magick "$OVERLAYED_WALLPAPER_PATH" "${draw_commands[@]}" "$OVERLAYED_WALLPAPER_PATH"
+
+    local FINAL_CHECK_WALLPAPER=$(xfconf-query -c xfce4-desktop -p "$PATH_PROPERTY")
+    if [[ "$FINAL_CHECK_WALLPAPER" != "$CURRENT_WALLPAPER" ]]; then
+        echo "Wallpaper changed during overlay calculation. Discarding result and recalculating..." | systemd-cat -t "$APP_NAME" -p info
+        overlay_wallpaper "wallpaper"
+        return
+    fi
+
+    xfconf-query -c xfce4-desktop -p "$STYLE_PROPERTY" -s "4" # scaled
+    xfconf-query -c xfce4-desktop -p "$PATH_PROPERTY" -s "$OVERLAYED_WALLPAPER_PATH"
+    echo "Wallpaper $ORIGINAL_WALLPAPER_PATH with mean brightness $mean overlaid with font size $font_size and set to $OVERLAYED_WALLPAPER_PATH" | systemd-cat -t "$APP_NAME" -p info
+}
+
+get_primary() {
+    local DISPLAYS_FILE=$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/displays.xml
+
+    if [[ -f "$DISPLAYS_FILE" ]]; then
+        # Extract the name of the primary display from XFCE’s display configuration.
+        # Using xmlstarlet for precise XML parsing, which offers more flexibility
+        # than xfconf-query for this specific nested property query.
+        xmlstarlet sel -t -v "//property[@name='Default']/property[property[@name='Primary' and @value='true']]/@name" "$DISPLAYS_FILE"
+    fi
+}
+
+get_physical_size() {
+    WIDTH_MM=$(echo "$1" | grep -oP '\d+mm x \d+mm' | cut -d'x' -f1 | grep -oP '\d+')
+    HEIGHT_MM=$(echo "$1" | grep -oP '\d+mm x \d+mm' | cut -d'x' -f2 | sed 's/mm//')
+    WIDTH_MM=${WIDTH_MM:-0}
+    HEIGHT_MM=${HEIGHT_MM:-0}
+
+    DISPLAY_SIZE=$(echo "scale=1; sqrt($WIDTH_MM^2 + $HEIGHT_MM^2) / 25.4" | bc -l)
+}
+
+if ! pgrep -x "xfwm4" > /dev/null; then
+    echo "No process xfwm4 found. $0 is meant to configure XFCE." | systemd-cat -t "$APP_NAME" -p err
+    exit 0
+fi
+
+# Obtain XFCE’s primary display information. xrandr’s "connected primary" may differ
+# from XFCE’s primary display configuration. In some cases, xrandr might show a
+# "disconnected primary", while XFCE’s actual primary is a different, connected display.
+# We use get_primary() to identify XFCE’s designated primary display from displays.xml.
+XFCE_PRIMARY="$(get_primary)"
+
+if [[ -z "$XFCE_PRIMARY" ]]; then
+    # Sometimes XFCE does not designate a primary display even if several displays are connected.
+    # Iterate through all connected displays and find the one with the largest size.
+    LARGEST_SIZE=0
+    XRANDR_INFO=""
+    while read -r line; do
+        get_physical_size "$line"
+        if (( $(echo "$DISPLAY_SIZE > $LARGEST_SIZE" | bc -l) )); then
+            LARGEST_SIZE=$DISPLAY_SIZE
+            XRANDR_INFO=$line
+        fi
+    done < <(xrandr | grep " connected")
+
+    XFCE_PRIMARY=$(echo "$XRANDR_INFO" | awk '{print $1}')
+fi
+
+while true; do
+    PATH_PROPERTY=$(xfconf-query -c xfce4-desktop -l | grep 'last-image' | grep "$XFCE_PRIMARY" | head -1)
+
+    if [[ -n "$PATH_PROPERTY" ]]; then
+        break
+    else
+        sleep 1
+    fi
+done
+
+STYLE_PROPERTY="${PATH_PROPERTY/last-image/image-style}"
+APP_NAME="xfce-wallpaper-overlay"
+CONFIG_PATH="$XDG_CONFIG_HOME/xfce4/wallpaper-overlay"
+DATA_PATH="${XDG_DATA_HOME:-$HOME/.local/share}/$APP_NAME"
+mkdir -p "$CONFIG_PATH"
+mkdir -p "$DATA_PATH"
+
+# Delay initial overlay calculation by 20 seconds to avoid processing intermediate data, as some desktop
+# components (e.g., variety wallpaper manager) may take longer to start and set the final wallpaper.
+sleep 20
+overlay_wallpaper "wallpaper"
+
+{
+    xfconf-query -c xfce4-desktop -p "$PATH_PROPERTY" -m | while read -r line; do
+        echo "wallpaper"
+    done &
+    PID1=$!
+
+    inotifywait -q -m -r -e modify -e create -e delete "$CONFIG_PATH" | while read -r line; do
+        echo "config"
+    done &
+    PID2=$!
+
+    exit_handler() {
+        kill $PID1 $PID2
+        exit 0
+    }
+
+    trap 'exit_handler' SIGINT SIGTERM
+
+    wait
+} | while read -r change_type; do
+    sleep 3 # avoid processing intermediate images or text files
+    overlay_wallpaper "$change_type"
+done

@@ -1,0 +1,20 @@
+pkgbase = xfce-wallpaper-overlay
+	pkgdesc = Automatically overlays XFCE wallpaper with text from files in ~/.config/xfce-wallpaper-overlay
+	pkgver = 1.29
+	pkgrel = 1
+	url = https://ditana.org
+	arch = any
+	license = AGPL-3.0-or-later AND MIT-Modern-Variant AND custom:imagemagick AND GPL-2.0-only AND GPL-2.0-or-later AND MIT
+	depends = fontconfig
+	depends = imagemagick
+	depends = inotify-tools
+	depends = xfconf
+	depends = xmlstarlet
+	source = file:///media/stefan/data/Documents/git/my-projects/acrion/ditana/packages/001-xfce-wallpaper-overlay/overlay-wallpaper
+	source = file:///media/stefan/data/Documents/git/my-projects/acrion/ditana/packages/001-xfce-wallpaper-overlay/xfce-wallpaper-overlay.desktop
+	source = file:///media/stefan/data/Documents/git/my-projects/acrion/ditana/packages/001-xfce-wallpaper-overlay/xfce-wallpaper-overlay.1
+	sha256sums = SKIP
+	sha256sums = SKIP
+	sha256sums = SKIP
+
+pkgname = xfce-wallpaper-overlay

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=XFCE Wallpaper Overlay
+Comment=Overlay text on XFCE wallpaper
+Exec=/usr/lib/xfce4/wallpaper-overlay/overlay-wallpaper
+Terminal=false
+Hidden=false
+X-GNOME-Autostart-enabled=true
